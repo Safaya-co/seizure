@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Assistant Médical</title>
+  <style>
+    /* [Même style que dans ton message, inchangé] */
+    /* ... Copie-colle ici exactement ce que tu avais déjà pour garder le design */
+    /* Je l’abrège ici pour clarté */
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-icon" title="Nouveau" onclick="resetChat()">＋</div>
+    <div class="sidebar-icon" title="Options">⚙</div>
+    <div class="sidebar-icon" title="Menu">☰</div>
+  </div>
+  <div class="chat-container">
+    <div class="messages" id="messages">
+      <div class="initial-state">
+        <div class="orb"></div>
+        <p>Bienvenue</p>
+        <small>Posez votre question pour commencer</small>
+      </div>
+    </div>
+    <div class="input-container">
+      <div class="input-group">
+        <textarea id="chatInput" placeholder="Posez votre question (Shift+Entrée pour nouvelle ligne)"></textarea>
+        <button class="send-text" id="sendBtn">Envoyer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    function adjustHeight() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = (inputEl.scrollHeight) + 'px';
+    }
+
+    inputEl.addEventListener('input', adjustHeight);
+    setTimeout(adjustHeight, 100);
+
+    function clearInitial() {
+      const init = document.querySelector('.initial-state');
+      if (init) init.remove();
+    }
+
+    function appendMessage(text, sender, score = null) {
+      clearInitial();
+      const msg = document.createElement('div');
+      msg.classList.add('message', sender);
+
+      const avatar = document.createElement('div');
+      avatar.classList.add('message-avatar');
+      const orb = document.createElement('div');
+      orb.classList.add('mini-orb');
+      avatar.appendChild(orb);
+
+      const content = document.createElement('div');
+      content.classList.add('message-content');
+      const p = document.createElement('p');
+      p.textContent = text;
+      content.appendChild(p);
+
+      if (score !== null) {
+        const small = document.createElement('small');
+        const emoji = score.grounded ? '✅' : '⚠️';
+        small.textContent = `📎 Pertinence : ${score.cosine} • ${emoji} ${score.grounded ? 'Documents' : 'Non vérifiable'}`;
+        content.appendChild(small);
+      }
+
+      if (sender === 'user') msg.append(content, avatar);
+      else msg.append(avatar, content);
+
+      messagesEl.appendChild(msg);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function showTyping() {
+      clearInitial();
+      const typing = document.createElement('div');
+      typing.classList.add('message', 'ai');
+      const avatar = document.createElement('div');
+      avatar.classList.add('message-avatar');
+      const orb = document.createElement('div');
+      orb.classList.add('mini-orb');
+      avatar.appendChild(orb);
+      const content = document.createElement('div');
+      content.classList.add('message-content');
+      const spinner = document.createElement('div');
+      spinner.classList.add('spinner');
+      content.appendChild(spinner);
+      typing.append(avatar, content);
+      messagesEl.appendChild(typing);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function sendMessage(text) {
+      appendMessage(text, 'user');
+      showTyping();
+
+      fetch('/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ message: text })
+      })
+      .then(res => res.json())
+      .then(data => {
+        const typingEl = document.querySelector('.message.ai:last-child');
+        if (typingEl) typingEl.remove();
+
+        appendMessage(data.response || "Réponse vide.", 'ai', {
+          cosine: data.cosine_score,
+          grounded: data.grounded_in_docs
+        });
+      })
+      .catch(err => {
+        const typingEl = document.querySelector('.message.ai:last-child');
+        if (typingEl) typingEl.remove();
+        appendMessage("Erreur lors du traitement.", 'ai');
+        console.error(err);
+      });
+
+      inputEl.value = '';
+      adjustHeight();
+      inputEl.focus();
+    }
+
+    sendBtn.addEventListener('click', () => {
+      if (inputEl.value.trim()) sendMessage(inputEl.value.trim());
+    });
+
+    inputEl.addEventListener('keypress', e => {
+      if (e.key === 'Enter' && !e.shiftKey && inputEl.value.trim()) {
+        e.preventDefault();
+        sendMessage(inputEl.value.trim());
+      }
+    });
+
+    function resetChat() {
+      messagesEl.innerHTML = `
+        <div class="initial-state">
+          <div class="orb"></div>
+          <p>Bienvenue</p>
+          <small>Posez votre question pour commencer</small>
+        </div>`;
+      inputEl.value = '';
+      adjustHeight();
+    }
+  </script>
+</body>
+</html>
