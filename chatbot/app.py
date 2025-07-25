@@ -72,30 +72,170 @@ def get_top_k_chunks(query, k=20, rerank_k=10):
     return [text for text, _ in ranked[:rerank_k]]
 
 
-def build_prompt(query, top_chunks):
-    """Construit le prompt pour Mistral avec contexte."""
-    instruction = (
-        "Réponds uniquement avec les informations fournies dans les contextes ci-dessous. "
-        "Si l'information n'est pas présente, dis 'Je ne sais pas'."
-    )
-    context = "\n\n".join([f"[{i+1}] {chunk.strip()}" for i, chunk in enumerate(top_chunks)])
-    return f"""{instruction}
+def classify_question_type(question):
+    """Détermine si une question nécessite le RAG ou peut être répondue directement."""
+    
+    # Mots-clés indiquant une question médicale générale (pas besoin de RAG)
+    general_keywords = [
+        "bonjour", "salut", "hello", "comment allez-vous", "comment ça va",
+        "qui êtes-vous", "que faites-vous", "pouvez-vous m'aider",
+        "qu'est-ce que", "définition", "expliquer", "c'est quoi",
+        "merci", "au revoir", "goodbye", "à bientôt"
+    ]
+    
+    # Mots-clés indiquant une question spécialisée (besoin de RAG)
+    specialized_keywords = [
+        "crise", "épilepsie", "convulsion", "seizure", "eeg", "électroencéphalogramme",
+        "diagnostic", "traitement", "médicament", "antiépileptique", "protocole",
+        "symptôme", "signe", "manifestation", "patient", "cas clinique",
+        "dosage", "posologie", "effet secondaire", "contre-indication"
+    ]
+    
+    question_lower = question.lower()
+    
+    # Vérifier les mots-clés généraux
+    general_score = sum(1 for keyword in general_keywords if keyword in question_lower)
+    
+    # Vérifier les mots-clés spécialisés
+    specialized_score = sum(1 for keyword in specialized_keywords if keyword in question_lower)
+    
+    # Questions très courtes (moins de 10 mots) sont souvent générales
+    word_count = len(question.split())
+    
+    # Logique de classification
+    if general_score > 0 and specialized_score == 0:
+        return "general", 0.9
+    elif specialized_score > 0:
+        return "specialized", min(0.9, 0.5 + (specialized_score * 0.1))
+    elif word_count < 5:
+        return "general", 0.7
+    else:
+        # Par défaut, traiter comme spécialisé mais avec moins de confiance
+        return "specialized", 0.6
 
-Contextes :
-{context}
+
+def get_conversation_context(current_question, max_context_items=5):
+    """Récupère le contexte de conversation récent pour maintenir la mémoire."""
+    history = load_history()
+    
+    if not history:
+        return None, False
+    
+    # Prendre les N dernières interactions (exclure la question actuelle si elle est déjà sauvée)
+    recent_history = history[-max_context_items:]
+    
+    # Vérifier s'il y a des références contextuelles dans la question actuelle
+    contextual_indicators = [
+        "comme vous avez dit", "comme mentionné", "en référence à", "suite à",
+        "concernant votre réponse", "à propos de", "dans le cas précédent",
+        "il", "elle", "cela", "ça", "ce", "cette", "celui", "celle",
+        "et aussi", "également", "de plus", "en plus"
+    ]
+    
+    has_contextual_reference = any(indicator in current_question.lower() 
+                                 for indicator in contextual_indicators)
+    
+    # Construire le contexte de conversation
+    if recent_history and (has_contextual_reference or len(recent_history) >= 2):
+        context_parts = []
+        for i, entry in enumerate(recent_history):
+            context_parts.append(f"[Interaction {i+1}]")
+            context_parts.append(f"Question: {entry['question']}")
+            # Résumer la réponse si elle est longue
+            answer = entry['answer']
+            if len(answer) > 200:
+                answer = answer[:200] + "..."
+            context_parts.append(f"Réponse: {answer}")
+            context_parts.append("")  # Ligne vide
+        
+        return "\n".join(context_parts), has_contextual_reference
+    
+    return None, has_contextual_reference
+
+
+def build_prompt_with_memory(query, top_chunks, is_grounded=True, conversation_context=None):
+    """Construit le prompt avec contexte de conversation si disponible."""
+    
+    # Prompt de base selon le type (grounded ou non)
+    if is_grounded:
+        base_instruction = (
+            "Réponds uniquement avec les informations fournies dans les contextes ci-dessous. "
+            "Si l'information n'est pas présente, dis 'Je ne sais pas'."
+        )
+    else:
+        base_instruction = (
+            "Les contextes suivants contiennent peu d'informations pertinentes pour cette question. "
+            "Réponds en te basant sur tes connaissances médicales générales, tout en restant prudent et en recommandant une consultation médicale si nécessaire."
+        )
+    
+    # Contexte documentaire
+    if is_grounded:
+        doc_context = "\n\n".join([f"[Doc {i+1}] {chunk.strip()}" for i, chunk in enumerate(top_chunks)])
+    else:
+        doc_context = "\n\n".join([f"[Doc {i+1}] {chunk.strip()}" for i, chunk in enumerate(top_chunks[:3])])
+    
+    # Construire le prompt avec ou sans mémoire conversationnelle
+    if conversation_context:
+        return f"""{base_instruction}
+
+CONTEXTE DE CONVERSATION RÉCENTE :
+{conversation_context}
+
+CONTEXTES DOCUMENTAIRES :
+{doc_context}
+
+QUESTION ACTUELLE : {query}
+
+Instructions supplémentaires :
+- Tiens compte de l'historique de conversation pour donner une réponse cohérente
+- Si la question fait référence à une discussion précédente, utilise ce contexte
+- Reste dans le domaine médical et spécialisé en détection de crises
+
+Réponse :"""
+    else:
+        return f"""{base_instruction}
+
+CONTEXTES DOCUMENTAIRES :
+{doc_context}
 
 Question : {query}
 
 Réponse :"""
 
 
-def call_mistral_api(prompt):
-    """Envoie un prompt à l'API Mistral et retourne la réponse."""
+def call_mistral_with_memory(prompt, is_grounded=True, has_memory_context=False):
+    """Appel à Mistral avec gestion de la mémoire conversationnelle."""
     try:
+        # Adapter le message système selon la présence de mémoire
+        if has_memory_context:
+            if is_grounded:
+                system_message = (
+                    "Tu es un assistant médical spécialisé en détection de crises. "
+                    "Tu as accès à l'historique de la conversation et peux t'y référer pour donner des réponses cohérentes. "
+                    "Utilise ce contexte pour personnaliser tes réponses."
+                )
+            else:
+                system_message = (
+                    "Tu es un assistant médical spécialisé en détection de crises. "
+                    "Tu as accès à l'historique de la conversation. "
+                    "IMPORTANT: Tu dois commencer ta réponse par '⚠️ ATTENTION: Cette réponse ne se base pas avec certitude sur la documentation fournie. ' "
+                    "puis donner une réponse basée sur tes connaissances générales et le contexte conversationnel."
+                )
+        else:
+            # Messages système originaux si pas de contexte mémoire
+            if is_grounded:
+                system_message = "Tu es un assistant médical spécialisé en détection de crises."
+            else:
+                system_message = (
+                    "Tu es un assistant médical spécialisé en détection de crises. "
+                    "IMPORTANT: Tu dois commencer ta réponse par '⚠️ ATTENTION: Cette réponse ne se base pas avec certitude sur la documentation fournie. ' "
+                    "puis donner une réponse basée sur tes connaissances générales tout en restant prudent."
+                )
+        
         response = client.chat.completions.create(
-            model="mistral-medium-2505",  # Modèle disponible selon votre test
+            model="mistral-medium-2505",
             messages=[
-                {"role": "system", "content": "Tu es un assistant médical spécialisé en détection de crises."},
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
@@ -103,8 +243,83 @@ def call_mistral_api(prompt):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"Erreur API Mistral: {e}")
+        print(f"Erreur API Mistral (avec mémoire): {e}")
         return f"[ERREUR] {e}"
+
+
+def call_mistral_without_rag_with_memory(question, conversation_context=None):
+    """Répond à une question générale avec mémoire conversationnelle."""
+    try:
+        # Construire le prompt avec contexte si disponible
+        if conversation_context:
+            prompt = f"""CONTEXTE DE CONVERSATION RÉCENTE :
+{conversation_context}
+
+QUESTION ACTUELLE : {question}
+
+Instructions :
+- Tiens compte de l'historique pour donner une réponse cohérente
+- Réponds de manière concise et professionnelle
+- Pour les questions médicales spécifiques, recommande une consultation médicale
+
+Réponse :"""
+            system_message = (
+                "Tu es un assistant médical spécialisé en détection de crises. "
+                "Tu as accès à l'historique de conversation et peux t'y référer pour maintenir la cohérence."
+            )
+        else:
+            prompt = question
+            system_message = (
+                "Tu es un assistant médical spécialisé en détection de crises. "
+                "Réponds de manière concise et professionnelle. "
+                "Pour les questions médicales spécifiques, recommande toujours une consultation médicale."
+            )
+        
+        response = client.chat.completions.create(
+            model="mistral-medium-2505",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=256,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Erreur API Mistral (sans RAG avec mémoire): {e}")
+        return f"[ERREUR] {e}"
+
+
+def generate_short_summary(long_answer):
+    """Génère un résumé court d'une réponse longue."""
+    # Seuil pour considérer une réponse comme longue
+    if len(long_answer.split()) < 50:
+        return None  # Pas besoin de résumé pour les réponses courtes
+    
+    try:
+        response = client.chat.completions.create(
+            model="mistral-medium-2505",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Tu dois résumer le texte médical fourni en 2-3 phrases maximum. "
+                        "Garde les informations essentielles et les recommandations importantes. "
+                        "Commence par 'En résumé:'"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Résume ce texte médical:\n\n{long_answer}"
+                },
+            ],
+            temperature=0.2,
+            max_tokens=150,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Erreur génération résumé: {e}")
+        return None
 
 
 def compute_similarity(answer, context):
@@ -114,14 +329,20 @@ def compute_similarity(answer, context):
     return util.cos_sim(emb_ans, emb_ctx).item()
 
 
-def save_to_history(question, answer, score, grounded):
+def save_to_history(question, answer, score, grounded, question_type, used_rag, memory_used):
     """Sauvegarde l'interaction dans le fichier JSON d'historique."""
     entry = {
         "timestamp": datetime.now().isoformat(),
         "question": question,
         "answer": answer,
         "cosine_score": round(score, 3),
-        "grounded": grounded
+        "grounded": grounded,
+        "confidence_level": "haute" if grounded else "faible",
+        "has_warning": answer.startswith("⚠️"),
+        "question_type": question_type,
+        "used_rag": used_rag,
+        "memory_used": memory_used,
+        "answer_length": len(answer.split())
     }
     history = load_history()
     history.append(entry)
@@ -148,19 +369,76 @@ def chat():
     if not question:
         return jsonify({"response": "Aucune question fournie."})
 
-    top_chunks = get_top_k_chunks(question)
-    prompt = build_prompt(question, top_chunks)
-    answer = call_mistral_api(prompt)
-    context_concat = " ".join(top_chunks)
-    cosine_score = compute_similarity(answer, context_concat)
-    grounded = cosine_score >= 0.7
-
-    save_to_history(question, answer, cosine_score, grounded)
-    return jsonify({
+    # ÉTAPE 1: Classification de la question
+    question_type, classification_confidence = classify_question_type(question)
+    print(f"📝 Question classifiée: {question_type} (confiance: {classification_confidence})")
+    
+    # ÉTAPE 2: Récupération du contexte conversationnel
+    conversation_context, has_contextual_ref = get_conversation_context(question)
+    memory_used = conversation_context is not None
+    print(f"🧠 Mémoire: {'Utilisée' if memory_used else 'Non utilisée'} | Référence contextuelle: {has_contextual_ref}")
+    
+    # ÉTAPE 3: Traitement selon le type de question
+    if question_type == "general":
+        # Réponse directe sans RAG mais avec mémoire possible
+        answer = call_mistral_without_rag_with_memory(question, conversation_context)
+        cosine_score = 0.0  # Pas de score RAG pour les questions générales
+        grounded = False
+        used_rag = False
+        short_summary = None
+        
+    else:
+        # Utiliser le RAG pour les questions spécialisées avec mémoire
+        used_rag = True
+        top_chunks = get_top_k_chunks(question)
+        context_concat = " ".join(top_chunks)
+        
+        # Calculer la similarité AVANT de générer la réponse
+        temp_similarity = compute_similarity(question, context_concat)
+        grounded = temp_similarity >= 0.4
+        
+        # Construire le prompt adapté avec mémoire
+        prompt = build_prompt_with_memory(question, top_chunks, is_grounded=grounded, conversation_context=conversation_context)
+        answer = call_mistral_with_memory(prompt, is_grounded=grounded, has_memory_context=memory_used)
+        
+        # Calculer la vraie similarité avec la réponse finale
+        cosine_score = compute_similarity(answer, context_concat)
+        final_grounded = cosine_score >= 0.7
+        
+        # Ajuster le statut si nécessaire
+        if not grounded and not answer.startswith("⚠️"):
+            answer = f"⚠️ ATTENTION: Cette réponse ne se base pas avec certitude sur la documentation fournie.\n\n{answer}"
+        
+        grounded = final_grounded
+        
+        # ÉTAPE 4: Générer un résumé court si la réponse est longue
+        short_summary = generate_short_summary(answer)
+    
+    # Sauvegarde dans l'historique
+    save_to_history(question, answer, cosine_score, grounded, question_type, used_rag, memory_used)
+    
+    # Préparer la réponse
+    response_data = {
         "response": answer,
         "cosine_score": round(cosine_score, 3),
-        "grounded_in_docs": grounded
-    })
+        "grounded_in_docs": grounded,
+        "confidence_level": "haute" if grounded else "faible",
+        "question_type": question_type,
+        "classification_confidence": round(classification_confidence, 2),
+        "used_rag": used_rag,
+        "memory_used": memory_used,
+        "has_contextual_reference": has_contextual_ref,
+        "warning_displayed": answer.startswith("⚠️")
+    }
+    
+    # Ajouter le résumé court s'il existe
+    if short_summary:
+        response_data["short_summary"] = short_summary
+        response_data["has_short_summary"] = True
+    else:
+        response_data["has_short_summary"] = False
+    
+    return jsonify(response_data)
 
 @app.route("/history", methods=["GET"])
 def history():
