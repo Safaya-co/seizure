@@ -1,5 +1,4 @@
-# app.py - Backend Flask avec historique JSON pour assistant médical (Version avec gestion de sessions)
-
+# app.py - Backend Flask avec système multi-conversations
 from flask import Flask, request, jsonify, render_template
 from sentence_transformers import SentenceTransformer, util, CrossEncoder
 from dotenv import load_dotenv
@@ -10,6 +9,7 @@ import os
 import json
 import uuid
 import shutil
+import glob
 from datetime import datetime
 
 # --- Charger variables d'environnement depuis fichier .env ---
@@ -22,7 +22,7 @@ app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RETRIEVAL_FILE = os.path.join(BASE_DIR, "data", "retrieval_data_bge_v15.pkl")
 EMBEDDINGS_FILE = os.path.join(BASE_DIR, "data", "embeddings_bge_v15.pt")
-HISTORY_FILE = os.path.join(BASE_DIR, "chat_history.json")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # --- Gestion des sessions ---
 current_session_id = str(uuid.uuid4())
@@ -33,7 +33,6 @@ api_key = os.getenv("MISTRAL_API_KEY") or os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise RuntimeError("Aucun API key trouvé. Définir MISTRAL_API_KEY ou OPENAI_API_KEY dans .env.")
 
-# Configuration correcte pour Mistral
 client = OpenAI(
     api_key=api_key,
     base_url="https://api.mistral.ai/v1"
@@ -45,10 +44,6 @@ try:
     models = client.models.list()
     count = len(models.data) if hasattr(models, 'data') else len(models)
     print(f"✅ Connexion à l'API Mistral réussie, {count} modèles disponibles.")
-    if hasattr(models, 'data'):
-        print("Modèles disponibles:")
-        for model in models.data[:5]:
-            print(f"  - {model.id}")
 except Exception as e:
     print(f"❌ Échec de la connexion à l'API Mistral: {e}")
 
@@ -64,109 +59,205 @@ with open(RETRIEVAL_FILE, "rb") as f:
 all_chunks = retrieval_data.get("chunk", retrieval_data.get("chunks", [])).fillna("").astype(str).tolist()
 chunk_embeddings = torch.load(EMBEDDINGS_FILE, map_location="cpu")
 
-# --- Fonctions de gestion de l'historique ---
-def load_history():
-    """Charge l'historique JSON si existant, sinon renvoie [] - VERSION ULTRA ROBUSTE"""
+# --- Fonctions de gestion multi-conversations ---
+
+def get_conversation_file_path(session_id):
+    """Retourne le chemin du fichier de conversation pour une session donnée."""
+    return os.path.join(DATA_DIR, f"chat_history_{session_id}.json")
+
+def create_new_conversation():
+    """Crée une nouvelle conversation avec un ID unique."""
+    new_session_id = str(uuid.uuid4())
+    conversation_file = get_conversation_file_path(new_session_id)
+    
+    # Créer le dossier data s'il n'existe pas
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
+    # Initialiser le fichier de conversation
+    initial_data = {
+        "session_id": new_session_id,
+        "created_at": datetime.now().isoformat(),
+        "title": "Nouvelle conversation",
+        "messages": []
+    }
+    
     try:
-        if os.path.exists(HISTORY_FILE):
-            file_size = os.path.getsize(HISTORY_FILE)
-            if file_size == 0:
-                print("⚠️ Fichier historique vide détecté, initialisation automatique...")
-                _initialize_empty_history_file()
-                return []
-            
-            with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                
-                if not content:
-                    print("⚠️ Contenu historique vide après nettoyage, initialisation...")
-                    _initialize_empty_history_file()
-                    return []
-                
-                if len(content) < 2:
-                    print("⚠️ Contenu historique insuffisant, initialisation...")
-                    _initialize_empty_history_file()
-                    return []
-                
-                try:
-                    history = json.loads(content)
-                except json.JSONDecodeError as json_err:
-                    print(f"❌ Fichier JSON malformé: {json_err}")
-                    print(f"📋 Contenu du fichier (premiers 100 chars): '{content[:100]}'")
-                    _backup_and_reinitialize_history()
-                    return []
-                
-                if not isinstance(history, list):
-                    print(f"⚠️ Format historique invalide (type: {type(history)}), initialisation...")
-                    _backup_and_reinitialize_history()
-                    return []
-                
-                print(f"✅ Historique chargé avec succès: {len(history)} entrées")
-                return history
+        with open(conversation_file, 'w', encoding='utf-8') as f:
+            json.dump(initial_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"✅ Nouvelle conversation créée: {new_session_id[:8]}...")
+        return new_session_id
+        
+    except Exception as e:
+        print(f"❌ Erreur création conversation: {e}")
+        return None
+
+def load_conversation(session_id):
+    """Charge une conversation spécifique par son ID."""
+    conversation_file = get_conversation_file_path(session_id)
+    
+    try:
+        if os.path.exists(conversation_file):
+            with open(conversation_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get("messages", []), data
         else:
-            print("📝 Aucun fichier historique trouvé, création d'un nouveau fichier...")
-            _initialize_empty_history_file()
-            return []
+            print(f"⚠️ Fichier de conversation non trouvé: {session_id[:8]}")
+            return [], None
             
-    except PermissionError as e:
-        print(f"❌ Problème de permissions sur le fichier historique: {e}")
-        return []
+    except Exception as e:
+        print(f"❌ Erreur chargement conversation {session_id[:8]}: {e}")
+        return [], None
+
+def save_to_conversation(session_id, question, answer, score, grounded, question_type, used_rag, memory_used, short_summary=None, bullet_points=None):
+    """Sauvegarde une interaction dans la conversation spécifiée."""
+    conversation_file = get_conversation_file_path(session_id)
+    
+    # Charger la conversation existante
+    try:
+        if os.path.exists(conversation_file):
+            with open(conversation_file, 'r', encoding='utf-8') as f:
+                conversation_data = json.load(f)
+        else:
+            # Créer une nouvelle conversation si elle n'existe pas
+            conversation_data = {
+                "session_id": session_id,
+                "created_at": datetime.now().isoformat(),
+                "title": "Nouvelle conversation",
+                "messages": []
+            }
+    except Exception as e:
+        print(f"❌ Erreur chargement pour sauvegarde: {e}")
+        return False
+    
+    # Créer l'entrée
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "question": question,
+        "answer": answer,
+        "cosine_score": round(score, 3),
+        "grounded": grounded,
+        "confidence_level": "haute" if grounded else "faible",
+        "has_warning": answer.startswith("⚠️"),
+        "question_type": question_type,
+        "used_rag": used_rag,
+        "memory_used": memory_used,
+        "answer_length": len(answer.split()),
+        "short_summary": short_summary,
+        "bullet_points": bullet_points
+    }
+    
+    # Ajouter à la liste des messages
+    conversation_data["messages"].append(entry)
+    
+    # Mise à jour du titre si c'est le premier message
+    if len(conversation_data["messages"]) == 1:
+        # Générer un titre basé sur la première question
+        title = question if len(question) <= 50 else question[:47] + "..."
+        conversation_data["title"] = title
+        conversation_data["updated_at"] = datetime.now().isoformat()
+    else:
+        conversation_data["updated_at"] = datetime.now().isoformat()
+    
+    # Sauvegarder
+    try:
+        with open(conversation_file, 'w', encoding='utf-8') as f:
+            json.dump(conversation_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"✅ Conversation sauvegardée: {len(conversation_data['messages'])} messages (Session: {session_id[:8]})")
+        return True
         
     except Exception as e:
-        print(f"❌ Erreur inattendue lors du chargement de l'historique: {e}")
-        print(f"📋 Type d'erreur: {type(e).__name__}")
-        return []
+        print(f"❌ Erreur sauvegarde conversation: {e}")
+        return False
 
-
-def _initialize_empty_history_file():
-    """Initialise un fichier d'historique vide avec un JSON valide."""
+def get_all_conversations():
+    """Retourne la liste de toutes les conversations avec leurs métadonnées."""
+    conversations = []
+    
     try:
-        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        # Chercher tous les fichiers chat_history_*.json dans le dossier data
+        pattern = os.path.join(DATA_DIR, "chat_history_*.json")
+        conversation_files = glob.glob(pattern)
         
-        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump([], f, indent=2, ensure_ascii=False)
-        
-        print(f"✅ Fichier d'historique initialisé: {HISTORY_FILE}")
-        
-    except Exception as e:
-        print(f"❌ Impossible d'initialiser le fichier d'historique: {e}")
-
-
-def _backup_and_reinitialize_history():
-    """Sauvegarde un fichier corrompu et en crée un nouveau."""
-    try:
-        if os.path.exists(HISTORY_FILE):
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = HISTORY_FILE + f".corrupted.{timestamp}"
-            
+        for file_path in conversation_files:
             try:
-                shutil.copy2(HISTORY_FILE, backup_file)
-                print(f"💾 Fichier corrompu sauvegardé: {backup_file}")
-            except Exception as backup_error:
-                print(f"❌ Impossible de sauvegarder le fichier corrompu: {backup_error}")
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                    # Extraire les métadonnées
+                    session_id = data.get("session_id")
+                    title = data.get("title", "Conversation sans titre")
+                    created_at = data.get("created_at")
+                    updated_at = data.get("updated_at", created_at)
+                    message_count = len(data.get("messages", []))
+                    
+                    # Obtenir le dernier message pour aperçu
+                    last_message = ""
+                    if data.get("messages"):
+                        last_msg = data["messages"][-1]
+                        last_message = last_msg.get("question", "")[:100]
+                        if len(last_message) >= 100:
+                            last_message += "..."
+                    
+                    conversations.append({
+                        "session_id": session_id,
+                        "title": title,
+                        "created_at": created_at,
+                        "updated_at": updated_at,
+                        "message_count": message_count,
+                        "last_message": last_message,
+                        "file_path": file_path
+                    })
+                    
+            except Exception as e:
+                print(f"❌ Erreur lecture fichier {file_path}: {e}")
+                continue
         
-        _initialize_empty_history_file()
+        # Trier par date de mise à jour (plus récent en premier)
+        conversations.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+        
+        return conversations
         
     except Exception as e:
-        print(f"❌ Erreur lors de la sauvegarde et réinitialisation: {e}")
+        print(f"❌ Erreur récupération conversations: {e}")
+        return []
 
-
-def initialize_history_file():
-    """Initialise le fichier d'historique s'il n'existe pas ou est corrompu."""
-    try:
-        history = load_history()
+def get_conversation_context(current_question, session_id, max_context_items=5):
+    """Récupère le contexte de conversation récent pour une session spécifique."""
+    messages, _ = load_conversation(session_id)
+    
+    if not messages:
+        return None, False
+    
+    recent_history = messages[-max_context_items:]
+    
+    contextual_indicators = [
+        "comme vous avez dit", "comme mentionné", "en référence à", "suite à",
+        "concernant votre réponse", "à propos de", "dans le cas précédent",
+        "il", "elle", "cela", "ça", "ce", "cette", "celui", "celle",
+        "et aussi", "également", "de plus", "en plus"
+    ]
+    
+    has_contextual_reference = any(indicator in current_question.lower() 
+                                 for indicator in contextual_indicators)
+    
+    if recent_history and (has_contextual_reference or len(recent_history) >= 2):
+        context_parts = []
+        for i, entry in enumerate(recent_history):
+            context_parts.append(f"[Interaction {i+1}]")
+            context_parts.append(f"Question: {entry['question']}")
+            answer = entry['answer']
+            if len(answer) > 200:
+                answer = answer[:200] + "..."
+            context_parts.append(f"Réponse: {answer}")
+            context_parts.append("")
         
-        if not history and not os.path.exists(HISTORY_FILE):
-            os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-            with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-                json.dump([], f, indent=2, ensure_ascii=False)
-            print("📝 Fichier d'historique initialisé")
-            
-    except Exception as e:
-        print(f"❌ Erreur lors de l'initialisation de l'historique: {e}")
+        return "\n".join(context_parts), has_contextual_reference
+    
+    return None, has_contextual_reference
 
-
-# --- Fonctions RAG et IA ---
+# --- Fonctions RAG et IA (gardées identiques) ---
 def get_top_k_chunks(query, k=20, rerank_k=10):
     """Retourne les top-k chunks rerankés pour une question."""
     q_emb = embedding_model.encode(query, convert_to_tensor=True, normalize_embeddings=True)
@@ -178,10 +269,8 @@ def get_top_k_chunks(query, k=20, rerank_k=10):
     ranked = sorted(zip(candidates, rerank_scores), key=lambda x: x[1], reverse=True)
     return [text for text, _ in ranked[:rerank_k]]
 
-
 def classify_question_type(question):
     """Détermine si une question nécessite le RAG ou peut être répondue directement."""
-    
     general_keywords = [
         "bonjour", "salut", "hello", "comment allez-vous", "comment ça va",
         "qui êtes-vous", "que faites-vous", "pouvez-vous m'aider",
@@ -211,50 +300,6 @@ def classify_question_type(question):
         return "general", 0.7
     else:
         return "specialized", 0.6
-
-
-def get_conversation_context(current_question, max_context_items=5):
-    """Récupère le contexte de conversation récent pour la session actuelle."""
-    global current_session_id
-    
-    history = load_history()
-    
-    if not history:
-        return None, False
-    
-    # Filtrer par session actuelle
-    session_history = [entry for entry in history if entry.get('session_id') == current_session_id]
-    
-    if not session_history:
-        return None, False
-    
-    recent_history = session_history[-max_context_items:]
-    
-    contextual_indicators = [
-        "comme vous avez dit", "comme mentionné", "en référence à", "suite à",
-        "concernant votre réponse", "à propos de", "dans le cas précédent",
-        "il", "elle", "cela", "ça", "ce", "cette", "celui", "celle",
-        "et aussi", "également", "de plus", "en plus"
-    ]
-    
-    has_contextual_reference = any(indicator in current_question.lower() 
-                                 for indicator in contextual_indicators)
-    
-    if recent_history and (has_contextual_reference or len(recent_history) >= 2):
-        context_parts = []
-        for i, entry in enumerate(recent_history):
-            context_parts.append(f"[Interaction {i+1}]")
-            context_parts.append(f"Question: {entry['question']}")
-            answer = entry['answer']
-            if len(answer) > 200:
-                answer = answer[:200] + "..."
-            context_parts.append(f"Réponse: {answer}")
-            context_parts.append("")
-        
-        return "\n".join(context_parts), has_contextual_reference
-    
-    return None, has_contextual_reference
-
 
 def build_prompt_with_memory(query, top_chunks, is_grounded=True, conversation_context=None):
     """Construit le prompt avec contexte de conversation si disponible."""
@@ -302,7 +347,6 @@ Question : {query}
 
 Réponse :"""
 
-
 def call_mistral_with_memory(prompt, is_grounded=True, has_memory_context=False):
     """Appel à Mistral avec gestion de la mémoire conversationnelle."""
     try:
@@ -344,7 +388,6 @@ def call_mistral_with_memory(prompt, is_grounded=True, has_memory_context=False)
         print(f"Erreur API Mistral (avec mémoire): {e}")
         return f"[ERREUR] {e}"
 
-
 def call_mistral_without_rag_with_memory(question, conversation_context=None):
     """Répond à une question générale avec mémoire conversationnelle."""
     try:
@@ -362,7 +405,7 @@ Instructions :
 Réponse :"""
             system_message = (
                 "Tu es un assistant médical spécialisé en détection de crises. "
-                "Tu as accès à l'historique de conversation et peux t'y référer pour maintenir la cohérence."
+                "Tu has accès à l'historique de conversation et peux t'y référer pour maintenir la cohérence."
             )
         else:
             prompt = question
@@ -385,7 +428,6 @@ Réponse :"""
     except Exception as e:
         print(f"Erreur API Mistral (sans RAG avec mémoire): {e}")
         return f"[ERREUR] {e}"
-
 
 def generate_short_summary(long_answer):
     """Génère un résumé court d'une réponse longue."""
@@ -416,8 +458,6 @@ def generate_short_summary(long_answer):
     except Exception as e:
         print(f"Erreur génération résumé: {e}")
         return None
-
-
 
 def generate_bullet_points(long_answer):
     """Génère une version en points clés d'une réponse longue."""
@@ -452,6 +492,46 @@ def generate_bullet_points(long_answer):
         return None
 
 
+@app.route("/generate-summary", methods=["POST"])
+def generate_summary_endpoint():
+    """Route pour générer un résumé d'un texte."""
+    data = request.get_json() or {}
+    text = data.get("text", "").strip()
+    
+    if not text:
+        return jsonify({"error": "Texte manquant"}), 400
+    
+    try:
+        summary = generate_short_summary(text)
+        if summary:
+            return jsonify({"summary": summary})
+        else:
+            return jsonify({"summary": "Résumé non disponible pour ce texte."})
+    except Exception as e:
+        print(f"Erreur génération résumé: {e}")
+        return jsonify({"error": "Erreur lors de la génération du résumé"}), 500
+
+@app.route("/generate-bullet-points", methods=["POST"])
+def generate_bullet_points_endpoint():
+    """Route pour générer des points clés d'un texte."""
+    data = request.get_json() or {}
+    text = data.get("text", "").strip()
+    
+    if not text:
+        return jsonify({"error": "Texte manquant"}), 400
+    
+    try:
+        bullet_points = generate_bullet_points(text)
+        if bullet_points:
+            # Convertir le texte en liste de points
+            points_list = [line.strip('- ').strip() for line in bullet_points.split('\n') if line.strip() and line.strip().startswith('-')]
+            return jsonify({"bullet_points": points_list})
+        else:
+            return jsonify({"bullet_points": ["Points clés non disponibles pour ce texte."]})
+    except Exception as e:
+        print(f"Erreur génération points clés: {e}")
+        return jsonify({"error": "Erreur lors de la génération des points clés"}), 500
+
 
 def compute_similarity(answer, context):
     """Calcule la similarité cosinus entre réponse et contexte."""
@@ -459,58 +539,28 @@ def compute_similarity(answer, context):
     emb_ctx = embedding_model.encode(context, convert_to_tensor=True, normalize_embeddings=True)
     return util.cos_sim(emb_ans, emb_ctx).item()
 
-
-def save_to_history(question, answer, score, grounded, question_type, used_rag, memory_used, short_summary=None, bullet_points=None):
-    """Sauvegarde l'interaction dans le fichier JSON d'historique avec session."""
-    global current_session_id
-    
-    entry = {
-        "session_id": current_session_id,
-        "timestamp": datetime.now().isoformat(),
-        "question": question,
-        "answer": answer,
-        "cosine_score": round(score, 3),
-        "grounded": grounded,
-        "confidence_level": "haute" if grounded else "faible",
-        "has_warning": answer.startswith("⚠️"),
-        "question_type": question_type,
-        "used_rag": used_rag,
-        "memory_used": memory_used,
-        "answer_length": len(answer.split()),
-        "short_summary": short_summary,
-        "bullet_points": bullet_points
-    }
-    
-    try:
-        history = load_history()
-        history.append(entry)
-        
-        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-        
-        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(history, f, indent=2, ensure_ascii=False)
-        
-        print(f"✅ Historique sauvegardé: {len(history)} entrées (Session: {current_session_id[:8]})")
-        
-    except Exception as e:
-        print(f"❌ Erreur sauvegarde historique: {e}")
-
-
-
 # --- Routes Flask ---
+
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
 
-
 @app.route("/chat", methods=["POST"])
 def chat():
+    global current_session_id
+    
     data = request.get_json() or {}
     question = data.get("message", "").strip()
+    session_id = data.get("session_id") or current_session_id
+    
+    # Mettre à jour la session courante si nécessaire
+    if session_id != current_session_id:
+        current_session_id = session_id
+    
     if not question:
-        return jsonify({"response": "Aucune question fournie."})
+        return jsonify({"error": "Aucune question fournie."})
 
-    # Initialisation des variables pour éviter UnboundLocalError
+    # Initialisation des variables
     bullet_points = None
     short_summary = None
 
@@ -519,7 +569,7 @@ def chat():
     print(f"📝 Question classifiée: {question_type} (confiance: {classification_confidence})")
     
     # ÉTAPE 2: Récupération du contexte conversationnel
-    conversation_context, has_contextual_ref = get_conversation_context(question)
+    conversation_context, has_contextual_ref = get_conversation_context(question, current_session_id)
     memory_used = conversation_context is not None
     print(f"🧠 Mémoire: {'Utilisée' if memory_used else 'Non utilisée'} | Référence contextuelle: {has_contextual_ref}")
     
@@ -529,8 +579,6 @@ def chat():
         cosine_score = 0.0
         grounded = False
         used_rag = False
-        # short_summary et bullet_points restent None (déjà initialisés)
-        
     else:
         used_rag = True
         top_chunks = get_top_k_chunks(question)
@@ -552,13 +600,18 @@ def chat():
         short_summary = generate_short_summary(answer)
         bullet_points = generate_bullet_points(answer)
     
-    # Sauvegarde dans l'historique
-    save_to_history(question, answer, cosine_score, grounded, question_type, used_rag, memory_used, short_summary, bullet_points)
+    # Sauvegarde dans la conversation actuelle
+    save_to_conversation(current_session_id, question, answer, cosine_score, grounded, question_type, used_rag, memory_used, short_summary, bullet_points)
+    
+    # Récupérer les données de conversation pour le titre
+    _, conversation_data = load_conversation(current_session_id)
+    conversation_title = conversation_data.get("title", "Nouvelle conversation") if conversation_data else "Nouvelle conversation"
     
     # Préparer la réponse
     response_data = {
         "response": answer,
         "cosine_score": round(cosine_score, 3),
+        "confidence": round(cosine_score, 3),  # Ajouté pour compatibilité frontend
         "grounded_in_docs": grounded,
         "confidence_level": "haute" if grounded else "faible",
         "question_type": question_type,
@@ -566,7 +619,9 @@ def chat():
         "used_rag": used_rag,
         "memory_used": memory_used,
         "has_contextual_reference": has_contextual_ref,
-        "warning_displayed": answer.startswith("⚠️")
+        "warning_displayed": answer.startswith("⚠️"),
+        "session_id": current_session_id,
+        "title": conversation_title
     }
     
     # Ajout du résumé si disponible
@@ -585,60 +640,129 @@ def chat():
     
     return jsonify(response_data)
 
+@app.route("/conversations", methods=["GET"])
+def get_conversations():
+    """Retourne la liste de toutes les conversations."""
+    conversations = get_all_conversations()
+    return jsonify({
+        "conversations": conversations,
+        "current_session": current_session_id
+    })
 
+@app.route("/conversation/<session_id>", methods=["GET"])
+def get_conversation(session_id):
+    """Retourne une conversation spécifique."""
+    messages, conversation_data = load_conversation(session_id)
+    
+    if conversation_data:
+        return jsonify({
+            "session_id": session_id,
+            "title": conversation_data.get("title", "Conversation"),
+            "created_at": conversation_data.get("created_at"),
+            "updated_at": conversation_data.get("updated_at"),
+            "messages": messages
+        })
+    else:
+        return jsonify({"error": "Conversation non trouvée"}), 404
 
-@app.route("/history", methods=["GET"])
-def history():
-    return jsonify(load_history())
+@app.route("/switch-conversation", methods=["POST"])
+def switch_conversation():
+    """Change la session actuelle vers une autre conversation."""
+    global current_session_id
+    
+    data = request.get_json() or {}
+    new_session_id = data.get("session_id")
+    
+    if not new_session_id:
+        return jsonify({"error": "session_id manquant"}), 400
+    
+    # Vérifier si la conversation existe
+    conversation_file = get_conversation_file_path(new_session_id)
+    if not os.path.exists(conversation_file):
+        return jsonify({"error": "Conversation non trouvée"}), 404
+    
+    # Changer la session courante
+    current_session_id = new_session_id
+    print(f"🔄 Session changée vers: {current_session_id[:8]}...")
+    
+    # Retourner la conversation chargée
+    messages, conversation_data = load_conversation(current_session_id)
+    
+    return jsonify({
+        "session_id": current_session_id,
+        "title": conversation_data.get("title", "Conversation") if conversation_data else "Conversation",
+        "messages": messages
+    })
 
+@app.route("/new-conversation", methods=["POST"])
+def new_conversation():
+    """Crée une nouvelle conversation et la définit comme active."""
+    global current_session_id
+    
+    new_session_id = create_new_conversation()
+    
+    if new_session_id:
+        current_session_id = new_session_id
+        return jsonify({
+            "session_id": current_session_id,
+            "title": "Nouvelle conversation",
+            "message": "Nouvelle conversation créée"
+        })
+    else:
+        return jsonify({"error": "Impossible de créer une nouvelle conversation"}), 500
 
+@app.route("/delete-conversation/<session_id>", methods=["DELETE"])
+def delete_conversation(session_id):
+    """Supprime une conversation."""
+    global current_session_id
+    
+    conversation_file = get_conversation_file_path(session_id)
+    
+    try:
+        if os.path.exists(conversation_file):
+            # Créer une sauvegarde avant suppression
+            backup_file = conversation_file + f".deleted.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            shutil.move(conversation_file, backup_file)
+            
+            # Si c'est la conversation courante, créer une nouvelle
+            if current_session_id == session_id:
+                current_session_id = create_new_conversation()
+            
+            return jsonify({
+                "message": "Conversation supprimée avec succès",
+                "current_session": current_session_id
+            })
+        else:
+            return jsonify({"error": "Conversation non trouvée"}), 404
+            
+    except Exception as e:
+        return jsonify({"error": f"Erreur lors de la suppression: {e}"}), 500
+
+# Compatibilité avec les anciennes routes
 @app.route("/session-history", methods=["GET"])
 def session_history():
-    """Retourne l'historique de la session actuelle."""
-    global current_session_id
-    
-    history = load_history()
-    session_history = [entry for entry in history if entry.get('session_id') == current_session_id]
+    """Retourne l'historique de la session actuelle (compatibilité)."""
+    messages, conversation_data = load_conversation(current_session_id)
     
     return jsonify({
         "session_id": current_session_id,
-        "messages": session_history
+        "title": conversation_data.get("title", "Conversation") if conversation_data else "Conversation",
+        "messages": messages
     })
 
-
-@app.route("/new-session", methods=["POST"])
+@app.route("/new-session", methods=["POST"])  
 def new_session():
-    """Démarre une nouvelle session."""
-    global current_session_id
-    current_session_id = str(uuid.uuid4())
-    print(f"🆔 Nouvelle session créée: {current_session_id[:8]}...")
-    
-    return jsonify({
-        "session_id": current_session_id,
-        "message": "Nouvelle session créée"
-    })
-
-
-@app.route("/reset-history", methods=["POST"])
-def reset_history():
-    """Route pour réinitialiser l'historique en cas de problème."""
-    try:
-        if os.path.exists(HISTORY_FILE):
-            backup_file = HISTORY_FILE + f".backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            os.rename(HISTORY_FILE, backup_file)
-            print(f"💾 Historique sauvegardé: {backup_file}")
-        
-        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump([], f, indent=2, ensure_ascii=False)
-        
-        return jsonify({"status": "success", "message": "Historique réinitialisé avec succès"})
-        
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Erreur lors de la réinitialization: {e}"})
-
+    """Alias pour new_conversation (compatibilité)."""
+    return new_conversation()
 
 # --- Lancement de l'application ---
 if __name__ == "__main__":
-    initialize_history_file()
+    # Créer le dossier data s'il n'existe pas
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
+    # Créer la première conversation si aucune n'existe
+    conversations = get_all_conversations()
+    if not conversations:
+        current_session_id = create_new_conversation()
+    
     app.run(debug=True, port=5001)

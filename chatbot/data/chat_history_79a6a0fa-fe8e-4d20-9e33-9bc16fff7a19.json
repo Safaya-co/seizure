@@ -1,0 +1,53 @@
+{
+  "session_id": "79a6a0fa-fe8e-4d20-9e33-9bc16fff7a19",
+  "created_at": "2025-07-26T04:21:47.020708",
+  "title": "salut",
+  "messages": [
+    {
+      "timestamp": "2025-07-26T04:22:22.317514",
+      "question": "salut",
+      "answer": "Bonjour. Comment puis-je vous aider aujourd'hui ?",
+      "cosine_score": 0.0,
+      "grounded": false,
+      "confidence_level": "faible",
+      "has_warning": false,
+      "question_type": "general",
+      "used_rag": false,
+      "memory_used": false,
+      "answer_length": 7,
+      "short_summary": null,
+      "bullet_points": null
+    },
+    {
+      "timestamp": "2025-07-26T04:23:46.429001",
+      "question": "est ce que tu peux me parler des techniques utilisés pour détecter les crises sans être invasif?",
+      "answer": "Pour détecter les crises d'épilepsie de manière non invasive, plusieurs techniques et dispositifs sont utilisés, souvent basés sur des capteurs portables et des algorithmes de machine learning. Voici quelques-unes des techniques mentionnées dans les contextes documentaires :\n\n1. **Capteurs de mouvement** : Les accéléromètres et les gyroscopes sont couramment utilisés pour détecter les mouvements caractéristiques des crises, notamment les crises tonico-cloniques. Ces capteurs peuvent être intégrés dans des dispositifs portables tels que des montres ou des bracelets.\n\n2. **Activité électrodermale (EDA)** : Les capteurs mesurant l'activité électrodermale peuvent détecter les changements dans la conductance de la peau, qui peuvent être associés à des crises épileptiques.\n\n3. **Photopléthysmographie (PPG)** : Cette technique mesure les variations de volume sanguin dans les tissus, souvent utilisée pour détecter les changements dans le rythme cardiaque ou la saturation en oxygène du sang, qui peuvent survenir pendant une crise.\n\n4. **Électrocardiographie (ECG)** : Les capteurs ECG portables peuvent détecter les anomalies cardiaques associées aux crises, telles que les variations de la fréquence cardiaque.\n\n5. **Combinaison de modalités** : L'utilisation de plusieurs capteurs simultanément (multimodal) peut améliorer la précision de la détection des crises. Par exemple, la combinaison de données d'accélérométrie et d'activité électrodermale peut fournir une détection plus robuste.\n\n6. **Algorithmes de machine learning** : Des modèles de machine learning, tels que les SVM (Support Vector Machines) et les réseaux de neurones convolutifs, sont souvent utilisés pour analyser les données des capteurs et détecter les crises. Ces algorithmes peuvent être entraînés sur des ensembles de données spécifiques pour améliorer leur précision.\n\n7. **Dispositifs portables spécifiques** : Des dispositifs comme l'Empatica E4, qui enregistrent des données multimodales (ACC, EDA, BVP), sont utilisés pour la détection des crises. Ces dispositifs sont souvent validés dans des études cliniques pour leur efficacité.\n\n8. **Détection de l'immobilité post-ictale** : Après une crise tonico-clonique, une période d'immobilité peut survenir. Des algorithmes heur",
+      "cosine_score": 0.88,
+      "grounded": true,
+      "confidence_level": "haute",
+      "has_warning": false,
+      "question_type": "specialized",
+      "used_rag": true,
+      "memory_used": true,
+      "answer_length": 310,
+      "short_summary": "En résumé: La détection non invasive des crises d'épilepsie repose sur des capteurs portables (mouvement, activité électrodermale, photopléthysmographie, ECG) et des algorithmes de machine learning pour analyser les données. L'utilisation combinée de plusieurs capteurs et dispositifs multimodaux, comme l'Empatica E4, améliore la précision de la détection, y compris l'identification de l'immobilité post-ictale.",
+      "bullet_points": "- **Capteurs de mouvement** : Utilisation d'accéléromètres et de gyroscopes dans des dispositifs portables (montres, bracelets) pour détecter les mouvements caractéristiques des crises tonico-cloniques.\n- **Activité électrodermale (EDA)** : Mesure des changements dans la conductance de la peau associés aux crises épileptiques.\n- **Techniques combinées** : Utilisation simultanée de plusieurs capteurs (ex: accélérométrie et EDA) pour améliorer la précision de la détection des crises.\n- **Algorithmes de machine learning** : Modèles comme les SVM et les réseaux de neurones convolutifs analysent les données des capteurs pour détecter les crises avec une précision accrue.\n- **Dispositifs portables spécifiques** : Utilisation de dispositifs validés cliniquement, comme l'Empatica E4, pour l'enregistrement de données multimodales et la dé"
+    },
+    {
+      "timestamp": "2025-07-26T04:24:16.227899",
+      "question": "merci",
+      "answer": "Je vous en prie ! Si vous avez d'autres questions ou besoin de plus d'informations, n'hésitez pas à demander. Prenez soin de vous et consultez toujours un professionnel de santé pour des conseils médicaux personnalisés.",
+      "cosine_score": 0.0,
+      "grounded": false,
+      "confidence_level": "faible",
+      "has_warning": false,
+      "question_type": "general",
+      "used_rag": false,
+      "memory_used": true,
+      "answer_length": 35,
+      "short_summary": null,
+      "bullet_points": null
+    }
+  ],
+  "updated_at": "2025-07-26T04:24:16.227932"
+}

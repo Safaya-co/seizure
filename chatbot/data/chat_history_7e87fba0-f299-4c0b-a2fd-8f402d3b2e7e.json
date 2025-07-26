@@ -1,0 +1,23 @@
+{
+  "session_id": "7e87fba0-f299-4c0b-a2fd-8f402d3b2e7e",
+  "created_at": "2025-07-26T04:24:20.364390",
+  "title": "est ce que tu pourrais m'expliquer les différen...",
+  "messages": [
+    {
+      "timestamp": "2025-07-26T04:25:18.810388",
+      "question": "est ce que tu pourrais m'expliquer les différence entre le NON-EEG et EEG technique de seizure detection",
+      "answer": "Les différences entre les techniques de détection de crises d'épilepsie basées sur l'EEG (électroencéphalogramme) et celles non basées sur l'EEG (NON-EEG) peuvent être résumées comme suit :\n\n1. **Confort et Utilisabilité** :\n   - **EEG** : Requiert le placement d'électrodes sur le cuir chevelu, ce qui peut être inconfortable et peu pratique pour un usage quotidien.\n   - **NON-EEG** : Utilise des dispositifs portables, légers et non intrusifs comme des smartwatches ou des capteurs, ce qui est plus confortable et pratique pour une utilisation quotidienne.\n\n2. **Acceptation Sociale et Vie Privée** :\n   - **EEG** : Porter un casque EEG en public peut causer une stigmatisation sociale et un inconfort.\n   - **NON-EEG** : Les dispositifs comme les bracelets ou les smartwatches sont plus discrets et mieux acceptés socialement.\n\n3. **Accessibilité et Coût** :\n   - **EEG** : Les systèmes basés sur l'EEG sont coûteux et nécessitent des professionnels formés pour leur installation et leur interprétation.\n   - **NON-EEG** : Les dispositifs portables sont moins chers et plus largement disponibles.\n\n4. **Surveillance Continue** :\n   - **EEG** : Difficile à utiliser pour une surveillance 24/7 dans la vie quotidienne.\n   - **NON-EEG** : Les solutions non basées sur l'EEG permettent une détection continue des crises à domicile, améliorant les soins à long terme.\n\n5. **Stress et Charge Émotionnelle** :\n   - **EEG** : Peut nécessiter des visites fréquentes à l'hôpital, ce qui peut être stressant.\n   - **NON-EEG** : Permet une surveillance à distance, réduisant la charge émotionnelle et améliorant le bien-être mental.\n\n6. **Portabilité et Intégration** :\n   - **EEG** : Requiert des installations fixes en laboratoire.\n   - **NON-EEG** : Peut être intégré avec des dispositifs portables et des objets connectés (IoT), comme des smartwatches et des bracelets de fitness.\n\n7. **Robustesse contre les Artéfacts et le Mouvement** :\n   - **EEG** : Les sign",
+      "cosine_score": 0.834,
+      "grounded": true,
+      "confidence_level": "haute",
+      "has_warning": false,
+      "question_type": "specialized",
+      "used_rag": true,
+      "memory_used": false,
+      "answer_length": 294,
+      "short_summary": "En résumé : Les techniques de détection de crises d'épilepsie basées sur l'EEG sont moins confortables, plus coûteuses et moins pratiques pour une utilisation quotidienne que les méthodes non basées sur l'EEG, qui utilisent des dispositifs portables, discrets et plus accessibles. Les solutions non basées sur l'EEG permettent une surveillance continue et à distance, réduisant le stress et améliorant le bien-être mental, tout en étant plus robustes contre les artefacts et les mouvements.",
+      "bullet_points": "- **Confort et Utilisabilité**\n  - EEG : Électrodes inconfortables et peu pratiques pour un usage quotidien.\n  - NON-EEG : Dispositifs portables, légers et non intrusifs (ex: smartwatches).\n\n- **Acceptation Sociale et Vie Privée**\n  - EEG : Stigmatisation sociale possible due au casque visible.\n  - NON-EEG : Dispositifs discrets et mieux acceptés socialement (ex: bracelets).\n\n- **Accessibilité et Coût**\n  - EEG : Coûteux et nécessite des professionnels formés.\n  - NON-EEG : Moins chers et plus largement disponibles.\n\n- **Surveillance Continue**\n  - EEG : Difficile pour une surveillance 24/7 dans la vie quotidienne.\n  - NON-EEG : Permet une détection continue des crises à domicile.\n\n- **Intégration et Portabilité**\n  -"
+    }
+  ],
+  "updated_at": "2025-07-26T04:25:18.810652"
+}
