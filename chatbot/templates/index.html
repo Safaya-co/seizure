@@ -1,157 +1,876 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Assistant Médical</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assistant Médical - IA Clinique</title>
   <style>
-    /* [Même style que dans ton message, inchangé] */
-    /* ... Copie-colle ici exactement ce que tu avais déjà pour garder le design */
-    /* Je l’abrège ici pour clarté */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      --warning-gradient: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+      --bullet-gradient: linear-gradient(135deg, #ff9a56 0%, #ffd56b 100%);
+      --background: #0f0f23;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-hover: rgba(255, 255, 255, 0.1);
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255, 255, 255, 0.7);
+      --text-muted: rgba(255, 255, 255, 0.5);
+      --border: rgba(255, 255, 255, 0.1);
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      --glow: 0 0 30px rgba(102, 126, 234, 0.3);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--background);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Animated background */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.1) 0%, transparent 50%);
+      z-index: -1;
+      animation: backgroundShift 20s ease-in-out infinite;
+    }
+
+    @keyframes backgroundShift {
+      0%, 100% { transform: rotate(0deg) scale(1); }
+      50% { transform: rotate(180deg) scale(1.1); }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 80px;
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 0;
+      position: relative;
+      z-index: 10;
+    }
+
+    .sidebar::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1px;
+      height: 100%;
+      background: var(--primary-gradient);
+      opacity: 0.5;
+    }
+
+    .sidebar-icon {
+      width: 48px;
+      height: 48px;
+      margin: 12px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 16px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      font-size: 20px;
+      font-weight: 300;
+    }
+
+    .sidebar-icon:hover {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+      transform: translateY(-2px);
+      box-shadow: var(--glow);
+    }
+
+    .sidebar-icon:active {
+      transform: translateY(0);
+    }
+
+    /* Chat container */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      height: 100vh;
+    }
+
+    /* Header */
+    .chat-header {
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+
+    .chat-title {
+      font-size: 20px;
+      font-weight: 600;
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 12px;
+    }
+
+    .header-button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 12px;
+      background: var(--surface-hover);
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+
+    .header-button:hover {
+      background: var(--primary-gradient);
+      color: white;
+      transform: translateY(-1px);
+    }
+
+    /* Messages area */
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scroll-behavior: smooth;
+    }
+
+    .messages-container::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .messages-container::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .messages-container::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    .messages-container::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    /* Initial state */
+    .initial-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      opacity: 0.8;
+      animation: fadeIn 1s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 0.8; transform: translateY(0); }
+    }
+
+    .medical-icon {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 32px;
+      background: var(--primary-gradient);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .medical-icon::before {
+      content: '⚕️';
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4); }
+      50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(102, 126, 234, 0); }
+    }
+
+    .welcome-text {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .welcome-subtitle {
+      font-size: 16px;
+      color: var(--text-secondary);
+      max-width: 400px;
+    }
+
+    /* Message styles */
+    .message {
+      display: flex;
+      gap: 16px;
+      max-width: 85%;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.user {
+      flex-direction: row-reverse;
+      align-self: flex-end;
+    }
+
+    .message.ai {
+      align-self: flex-start;
+    }
+
+    .message-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+      background: var(--surface);
+      backdrop-filter: blur(10px);
+    }
+
+    .message.user .message-avatar {
+      background: var(--primary-gradient);
+    }
+
+    .message.ai .message-avatar {
+      background: var(--secondary-gradient);
+    }
+
+    .message-content {
+      flex: 1;
+      max-width: calc(100% - 56px);
+    }
+
+    .message-text {
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      padding: 16px 20px;
+      border-radius: 20px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-primary);
+      word-wrap: break-word;
+      position: relative;
+    }
+
+    .message.user .message-text {
+      background: var(--primary-gradient);
+      color: white;
+      border-radius: 20px 20px 8px 20px;
+    }
+
+    .message.ai .message-text {
+      border-radius: 20px 20px 20px 8px;
+      border: 1px solid var(--border);
+    }
+
+    /* Message info */
+    .message-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .confidence-high { color: #4ade80; }
+    .confidence-medium { color: #fbbf24; }
+    .confidence-low { color: #f87171; }
+
+    .info-badge {
+      background: var(--surface);
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      border: 1px solid var(--border);
+    }
+
+    /* Action buttons */
+    .message-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .summary-button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--success-gradient);
+      color: white;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      opacity: 0.9;
+    }
+
+    .summary-button:hover {
+      opacity: 1;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3);
+    }
+
+    .bullet-button {
+      background: var(--bullet-gradient);
+    }
+
+    .bullet-button:hover {
+      box-shadow: 0 4px 12px rgba(255, 154, 86, 0.3);
+    }
+
+    /* Summary and bullet content styles */
+    .summary-content,
+    .bullet-content {
+      margin-top: 16px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      white-space: pre-line;
+      border-left: 3px solid #667eea;
+      animation: expandIn 0.3s ease-out;
+    }
+
+    .bullet-content {
+      border-left-color: #ff9a56;
+    }
+
+    @keyframes expandIn {
+      from { opacity: 0; max-height: 0; padding: 0 16px; }
+      to { opacity: 1; max-height: 300px; padding: 16px; }
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 16px 20px;
+      align-items: center;
+    }
+
+    .typing-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: typing 1.4s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes typing {
+      0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Input area */
+    .input-container {
+      padding: 24px;
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border);
+      position: relative;
+    }
+
+    .input-wrapper {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      max-width: 100%;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 16px 20px;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .input-wrapper:focus-within {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .message-input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 16px;
+      line-height: 1.5;
+      resize: none;
+      max-height: 120px;
+      min-height: 24px;
+      font-family: inherit;
+    }
+
+    .message-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .send-button {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      background: var(--primary-gradient);
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .send-button:hover {
+      transform: scale(1.05);
+      box-shadow: var(--glow);
+    }
+
+    .send-button:active {
+      transform: scale(0.95);
+    }
+
+    .send-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 60px;
+        padding: 16px 0;
+      }
+
+      .sidebar-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+      }
+
+      .chat-header {
+        padding: 16px 20px;
+      }
+
+      .messages-container {
+        padding: 16px;
+        gap: 16px;
+      }
+
+      .message {
+        max-width: 90%;
+      }
+
+      .message-text {
+        padding: 12px 16px;
+        font-size: 14px;
+      }
+
+      .input-container {
+        padding: 16px;
+      }
+
+      .input-wrapper {
+        padding: 12px 16px;
+      }
+
+      .message-input {
+        font-size: 16px; /* Pour éviter le zoom sur iOS */
+      }
+    }
+
+    /* Scrollbar styling */
+    .messages-container {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
   </style>
 </head>
+
 <body>
   <div class="sidebar">
-    <div class="sidebar-icon" title="Nouveau" onclick="resetChat()">＋</div>
-    <div class="sidebar-icon" title="Options">⚙</div>
-    <div class="sidebar-icon" title="Menu">☰</div>
+    <div class="sidebar-icon" onclick="resetChat()" title="Nouvelle conversation">
+      ➕
+    </div>
+    <div class="sidebar-icon" title="Historique">
+      📚
+    </div>
+    <div class="sidebar-icon" title="Paramètres">
+      ⚙️
+    </div>
   </div>
+
   <div class="chat-container">
-    <div class="messages" id="messages">
-      <div class="initial-state">
-        <div class="orb"></div>
-        <p>Bienvenue</p>
-        <small>Posez votre question pour commencer</small>
+    <div class="chat-header">
+      <div class="chat-title">Assistant Médical IA</div>
+      <div class="header-controls">
+        <button class="header-button" onclick="resetChat()">Nouveau Chat</button>
       </div>
     </div>
+
+    <div class="messages-container" id="messages">
+      <div class="initial-state">
+        <div class="medical-icon"></div>
+        <div class="welcome-text">Bienvenue</div>
+        <div class="welcome-subtitle">Posez votre question médicale pour commencer</div>
+      </div>
+    </div>
+
     <div class="input-container">
-      <div class="input-group">
-        <textarea id="chatInput" placeholder="Posez votre question (Shift+Entrée pour nouvelle ligne)"></textarea>
-        <button class="send-text" id="sendBtn">Envoyer</button>
+      <div class="input-wrapper">
+        <textarea 
+          id="messageInput" 
+          class="message-input" 
+          placeholder="Posez votre question médicale..."
+          rows="1"
+        ></textarea>
+        <button id="sendButton" class="send-button">
+          ➤
+        </button>
       </div>
     </div>
   </div>
 
   <script>
     const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('chatInput');
-    const sendBtn = document.getElementById('sendBtn');
+    const inputEl = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendButton');
 
+    // Auto-resize textarea
     function adjustHeight() {
       inputEl.style.height = 'auto';
-      inputEl.style.height = (inputEl.scrollHeight) + 'px';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
     }
 
     inputEl.addEventListener('input', adjustHeight);
-    setTimeout(adjustHeight, 100);
 
     function clearInitial() {
-      const init = document.querySelector('.initial-state');
-      if (init) init.remove();
+      const initial = document.querySelector('.initial-state');
+      if (initial) initial.remove();
     }
 
-    function appendMessage(text, sender, score = null) {
+    function createMessage(text, sender, data = {}) {
       clearInitial();
-      const msg = document.createElement('div');
-      msg.classList.add('message', sender);
+
+      const message = document.createElement('div');
+      message.className = `message ${sender}`;
 
       const avatar = document.createElement('div');
-      avatar.classList.add('message-avatar');
-      const orb = document.createElement('div');
-      orb.classList.add('mini-orb');
-      avatar.appendChild(orb);
+      avatar.className = 'message-avatar';
+      avatar.textContent = sender === 'user' ? '👤' : '🤖';
 
       const content = document.createElement('div');
-      content.classList.add('message-content');
-      const p = document.createElement('p');
-      p.textContent = text;
-      content.appendChild(p);
+      content.className = 'message-content';
 
-      if (score !== null) {
-        const small = document.createElement('small');
-        const emoji = score.grounded ? '✅' : '⚠️';
-        small.textContent = `📎 Pertinence : ${score.cosine} • ${emoji} ${score.grounded ? 'Documents' : 'Non vérifiable'}`;
-        content.appendChild(small);
+      const messageText = document.createElement('div');
+      messageText.className = 'message-text';
+      messageText.textContent = text;
+
+      content.appendChild(messageText);
+
+      if (sender === 'ai' && data) {
+        const messageInfo = document.createElement('div');
+        messageInfo.className = 'message-info';
+
+        if (data.cosine_score !== undefined) {
+          const confidence = data.cosine_score > 0.7 ? 'high' : data.cosine_score > 0.4 ? 'medium' : 'low';
+          const confidenceText = confidence === 'high' ? 'Haute' : confidence === 'medium' ? 'Moyenne' : 'Faible';
+          
+          const confidenceBadge = document.createElement('span');
+          confidenceBadge.className = `info-badge confidence-${confidence}`;
+          confidenceBadge.textContent = `Confiance: ${confidenceText}`;
+          messageInfo.appendChild(confidenceBadge);
+        }
+
+        if (data.question_type) {
+          const typeBadge = document.createElement('span');
+          typeBadge.className = 'info-badge';
+          typeBadge.textContent = `Type: ${data.question_type}`;
+          messageInfo.appendChild(typeBadge);
+        }
+
+        if (data.memory_used) {
+          const memoryBadge = document.createElement('span');
+          memoryBadge.className = 'info-badge';
+          memoryBadge.textContent = 'Mémoire utilisée';
+          messageInfo.appendChild(memoryBadge);
+        }
+
+        content.appendChild(messageInfo);
+
+        // Action buttons
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'message-actions';
+
+        // Summary button
+        if (data.has_short_summary && data.short_summary) {
+          const summaryBtn = document.createElement('button');
+          summaryBtn.className = 'summary-button';
+          summaryBtn.textContent = 'Résumé';
+          summaryBtn.onclick = () => showSummary(summaryBtn, data.short_summary);
+          buttonContainer.appendChild(summaryBtn);
+        }
+
+        // Bullet points button
+        if (data.has_bullet_points && data.bullet_points) {
+          const bulletBtn = document.createElement('button');
+          bulletBtn.className = 'summary-button bullet-button';
+          bulletBtn.textContent = '• Points clés';
+          bulletBtn.onclick = () => showBulletPoints(bulletBtn, data.bullet_points);
+          buttonContainer.appendChild(bulletBtn);
+        }
+
+        if (buttonContainer.children.length > 0) {
+          content.appendChild(buttonContainer);
+        }
       }
 
-      if (sender === 'user') msg.append(content, avatar);
-      else msg.append(avatar, content);
+      message.appendChild(avatar);
+      message.appendChild(content);
 
-      messagesEl.appendChild(msg);
+      messagesEl.appendChild(message);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function showSummary(button, summary) {
+      const messageContent = button.closest('.message').querySelector('.message-text');
+      const existingSummary = messageContent.querySelector('.summary-content');
+      
+      if (existingSummary) {
+        existingSummary.remove();
+        button.textContent = 'Résumé';
+        return;
+      }
+      
+      const summaryDiv = document.createElement('div');
+      summaryDiv.className = 'summary-content';
+      summaryDiv.textContent = summary;
+      
+      messageContent.appendChild(summaryDiv);
+      button.textContent = 'Masquer résumé';
+    }
+
+    function showBulletPoints(button, bulletPoints) {
+      console.log('Points clés reçus:', bulletPoints);
+      console.log('Type:', typeof bulletPoints);
+      
+      const messageContent = button.closest('.message').querySelector('.message-text');
+      const existingBullets = messageContent.querySelector('.bullet-content');
+      
+      if (existingBullets) {
+        existingBullets.remove();
+        button.textContent = '• Points clés';
+        return;
+      }
+      
+      const bulletDiv = document.createElement('div');
+      bulletDiv.className = 'bullet-content';
+      
+      // Utiliser textContent pour préserver les retours à la ligne
+      bulletDiv.textContent = bulletPoints;
+      
+      messageContent.appendChild(bulletDiv);
+      button.textContent = 'Masquer points';
     }
 
     function showTyping() {
-      clearInitial();
-      const typing = document.createElement('div');
-      typing.classList.add('message', 'ai');
+      const message = document.createElement('div');
+      message.className = 'message ai typing-message';
+
       const avatar = document.createElement('div');
-      avatar.classList.add('message-avatar');
-      const orb = document.createElement('div');
-      orb.classList.add('mini-orb');
-      avatar.appendChild(orb);
+      avatar.className = 'message-avatar';
+      avatar.textContent = '🤖';
+
       const content = document.createElement('div');
-      content.classList.add('message-content');
-      const spinner = document.createElement('div');
-      spinner.classList.add('spinner');
-      content.appendChild(spinner);
-      typing.append(avatar, content);
-      messagesEl.appendChild(typing);
+      content.className = 'message-content';
+
+      const typingIndicator = document.createElement('div');
+      typingIndicator.className = 'typing-indicator';
+      for (let i = 0; i < 3; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'typing-dot';
+        typingIndicator.appendChild(dot);
+      }
+
+      content.appendChild(typingIndicator);
+      message.appendChild(avatar);
+      message.appendChild(content);
+
+      messagesEl.appendChild(message);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
+    function hideTyping() {
+      const typing = document.querySelector('.typing-message');
+      if (typing) typing.remove();
+    }
+
     function sendMessage(text) {
-      appendMessage(text, 'user');
+      if (!text.trim()) return;
+
+      createMessage(text, 'user');
+      inputEl.value = '';
+      adjustHeight();
+      
       showTyping();
+      sendBtn.disabled = true;
 
       fetch('/chat', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text })
       })
       .then(res => res.json())
       .then(data => {
-        const typingEl = document.querySelector('.message.ai:last-child');
-        if (typingEl) typingEl.remove();
-
-        appendMessage(data.response || "Réponse vide.", 'ai', {
-          cosine: data.cosine_score,
-          grounded: data.grounded_in_docs
-        });
+        hideTyping();
+        createMessage(data.response || "Désolé, je n'ai pas pu traiter votre demande.", 'ai', data);
       })
       .catch(err => {
-        const typingEl = document.querySelector('.message.ai:last-child');
-        if (typingEl) typingEl.remove();
-        appendMessage("Erreur lors du traitement.", 'ai');
-        console.error(err);
+        hideTyping();
+        createMessage("Une erreur s'est produite. Veuillez réessayer.", 'ai');
+        console.error('Erreur:', err);
+      })
+      .finally(() => {
+        sendBtn.disabled = false;
+        inputEl.focus();
       });
-
-      inputEl.value = '';
-      adjustHeight();
-      inputEl.focus();
     }
 
-    sendBtn.addEventListener('click', () => {
-      if (inputEl.value.trim()) sendMessage(inputEl.value.trim());
-    });
+    function loadSessionHistory() {
+      fetch('/session-history')
+        .then(res => res.json())
+        .then(data => {
+          if (data.messages && data.messages.length > 0) {
+            clearInitial();
+            data.messages.forEach(entry => {
+              createMessage(entry.question, 'user');
+              createMessage(entry.answer, 'ai', {
+                cosine_score: entry.cosine_score,
+                grounded_in_docs: entry.grounded,
+                question_type: entry.question_type,
+                memory_used: entry.memory_used,
+                has_short_summary: !!entry.short_summary,
+                short_summary: entry.short_summary,
+                has_bullet_points: !!entry.bullet_points,
+                bullet_points: entry.bullet_points
+              });
+            });
+          }
+        })
+        .catch(err => {
+          console.log('Aucun historique de session trouvé:', err);
+        });
+    }
 
-    inputEl.addEventListener('keypress', e => {
-      if (e.key === 'Enter' && !e.shiftKey && inputEl.value.trim()) {
-        e.preventDefault();
-        sendMessage(inputEl.value.trim());
+    function resetChat() {
+      fetch('/new-session', { method: 'POST' })
+        .then(() => {
+          messagesEl.innerHTML = `
+            <div class="initial-state">
+              <div class="medical-icon"></div>
+              <div class="welcome-text">Bienvenue</div>
+              <div class="welcome-subtitle">Posez votre question médicale pour commencer</div>
+            </div>
+          `;
+          inputEl.value = '';
+          adjustHeight();
+          inputEl.focus();
+        });
+    }
+
+    // Event listeners
+    sendBtn.addEventListener('click', () => {
+      const text = inputEl.value.trim();
+      if (text) {
+        sendMessage(text);
       }
     });
 
-    function resetChat() {
-      messagesEl.innerHTML = `
-        <div class="initial-state">
-          <div class="orb"></div>
-          <p>Bienvenue</p>
-          <small>Posez votre question pour commencer</small>
-        </div>`;
-      inputEl.value = '';
-      adjustHeight();
-    }
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const text = inputEl.value.trim();
+        if (text) {
+          sendMessage(text);
+        }
+      }
+    });
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSessionHistory();
+      inputEl.focus();
+    });
   </script>
 </body>
 </html>
