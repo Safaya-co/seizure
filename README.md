@@ -90,3 +90,6 @@ Ce projet est développé par Safaya-co pour l'analyse et la détection de crise
 
 ## Contact
 by github
+
+## document de recherche:
+https://docs.google.com/document/d/1GhA1Yfc1vRqM34yANVCLZH-TiwhxbQcjhHNFWS8oyZg/edit?usp=sharing
